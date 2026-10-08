@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from tavily import TavilyClient
 import os
+import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,6 +16,9 @@ load_dotenv()
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
+if "TAVILY_API_KEY" in st.secrets:
+    os.environ["TAVILY_API_KEY"] = st.secrets["TAVILY_API_KEY"]
+    
 if not TAVILY_API_KEY:
     raise ValueError(
         "TAVILY_API_KEY is missing. "
