@@ -1,508 +1,857 @@
+
 import streamlit as st
 import time
-from agents import build_reader_agent, build_search_agent, writer_chain, critic_chain
+from agents import (
+    build_reader_agent,
+    build_search_agent,
+    writer_chain,
+    critic_chain,
+)
 
-# ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="ResearchMind · AI Research Agent",
-    page_icon="🔬",
+    page_title="ResearchMind | Multi-Agent AI",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
 
-/* ── Reset & base ── */
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 html, body, [class*="css"] {
     font-family: 'DM Sans', sans-serif;
-    color: #e8e4dc;
 }
 
 .stApp {
-    background: #0a0a0f;
-    background-image:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(255,140,50,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(255,80,30,0.08) 0%, transparent 55%);
+    background:
+        radial-gradient(circle at 0% 0%, rgba(0,145,255,.20), transparent 28%),
+        radial-gradient(circle at 100% 0%, rgba(0,238,255,.14), transparent 25%),
+        radial-gradient(circle at 100% 100%, rgba(0,91,255,.18), transparent 30%),
+        #020d26;
+    color: #eaf7ff;
+    min-height: 100vh;
 }
 
-/* ── Hide default streamlit chrome ── */
-#MainMenu, footer, header { visibility: hidden; }
-.block-container { padding: 2rem 3rem 4rem; max-width: 1200px; }
+.stApp:before,
+.stApp:after {
+    content: "";
+    position: fixed;
+    pointer-events: none;
+    z-index: 0;
+    border-radius: 50%;
+    filter: blur(2px);
+}
 
-/* ── Hero header ── */
+.stApp:before {
+    width: 520px;
+    height: 150px;
+    left: -160px;
+    top: -45px;
+    border: 2px solid rgba(0,195,255,.45);
+    transform: rotate(-25deg);
+    box-shadow: 0 0 35px rgba(0,160,255,.30);
+}
+
+.stApp:after {
+    width: 520px;
+    height: 150px;
+    right: -160px;
+    bottom: -45px;
+    border: 2px solid rgba(0,195,255,.40);
+    transform: rotate(-25deg);
+    box-shadow: 0 0 35px rgba(0,160,255,.25);
+}
+
+#MainMenu, header, footer {
+    visibility: hidden;
+}
+
+.block-container {
+    max-width: 1440px;
+    padding: 1.2rem 2.2rem 3rem;
+    position: relative;
+    z-index: 1;
+}
+
+/* HERO */
 .hero {
     text-align: center;
-    padding: 3.5rem 0 2.5rem;
-    position: relative;
+    padding: 8px 10px 20px;
 }
-.hero-eyebrow {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.7rem;
-    font-weight: 500;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    color: #ff8c32;
-    margin-bottom: 1rem;
-    opacity: 0.9;
+
+.hero-kicker {
+    color: #00d9ff;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 5px;
+    margin-bottom: 8px;
 }
-.hero h1 {
-    font-family: 'Syne', sans-serif;
-    font-size: clamp(2.8rem, 6vw, 5rem);
-    font-weight: 800;
-    line-height: 1.0;
-    letter-spacing: -0.03em;
-    color: #f0ebe0;
-    margin: 0 0 1rem;
+
+.hero-title {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(48px, 6vw, 76px);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -3px;
+    color: white;
+    text-shadow: 0 0 30px rgba(0,180,255,.18);
 }
-.hero h1 span {
-    color: #ff8c32;
+
+.hero-title span {
+    background: linear-gradient(90deg,#ffffff 45%,#00d9ff 72%,#008cff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
 }
-.hero-sub {
-    font-size: 1.05rem;
-    font-weight: 300;
-    color: #a09890;
-    max-width: 520px;
-    margin: 0 auto;
+
+.hero-subtitle {
+    max-width: 670px;
+    margin: 14px auto 0;
+    color: #9fc5ee;
+    font-size: 16px;
     line-height: 1.65;
 }
 
-/* ── Divider ── */
-.divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255,140,50,0.3), transparent);
-    margin: 2rem 0;
-}
-
-/* ── Input card ── */
-.input-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,140,50,0.15);
-    border-radius: 16px;
-    padding: 2rem 2.5rem;
-    margin-bottom: 2rem;
-    backdrop-filter: blur(8px);
-}
-
-/* ── Streamlit input overrides ── */
-.stTextInput > div > div > input {
-    background: rgba(255,255,255,0.05) !important;
-    border: 1px solid rgba(255,140,50,0.25) !important;
-    border-radius: 10px !important;
-    color: #f0ebe0 !important;
-    font-family: 'DM Sans', sans-serif !important;
-    font-size: 1rem !important;
-    padding: 0.75rem 1rem !important;
-    transition: border-color 0.2s, box-shadow 0.2s !important;
-}
-.stTextInput > div > div > input:focus {
-    border-color: #ff8c32 !important;
-    box-shadow: 0 0 0 3px rgba(255,140,50,0.12) !important;
-}
-.stTextInput > label {
-    font-family: 'DM Mono', monospace !important;
-    font-size: 0.72rem !important;
-    letter-spacing: 0.15em !important;
-    text-transform: uppercase !important;
-    color: #ff8c32 !important;
-    font-weight: 500 !important;
-}
-
-/* ── Button ── */
-.stButton > button {
-    background: linear-gradient(135deg, #ff8c32 0%, #ff5a1a 100%) !important;
-    color: #0a0a0f !important;
-    font-family: 'Syne', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 0.95rem !important;
-    letter-spacing: 0.04em !important;
-    border: none !important;
-    border-radius: 10px !important;
-    padding: 0.7rem 2.2rem !important;
-    cursor: pointer !important;
-    transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s !important;
-    box-shadow: 0 4px 20px rgba(255,140,50,0.3) !important;
-    width: 100%;
-}
-.stButton > button:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 8px 28px rgba(255,140,50,0.4) !important;
-    opacity: 0.95 !important;
-}
-.stButton > button:active {
-    transform: translateY(0) !important;
-}
-
-/* ── Pipeline step cards ── */
-.step-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 1.5rem 1.8rem;
-    margin-bottom: 1.2rem;
-    position: relative;
-    overflow: hidden;
-    transition: border-color 0.3s;
-}
-.step-card.active {
-    border-color: rgba(255,140,50,0.4);
-    background: rgba(255,140,50,0.04);
-}
-.step-card.done {
-    border-color: rgba(80,200,120,0.3);
-    background: rgba(80,200,120,0.03);
-}
-.step-card::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
-    border-radius: 14px 0 0 14px;
-    background: rgba(255,255,255,0.05);
-    transition: background 0.3s;
-}
-.step-card.active::before { background: #ff8c32; }
-.step-card.done::before   { background: #50c878; }
-
-.step-header {
+/* VISUAL PIPELINE */
+.visual-pipeline {
     display: flex;
     align-items: center;
-    gap: 0.8rem;
-    margin-bottom: 0.3rem;
+    justify-content: center;
+    gap: 16px;
+    padding: 16px 22px;
+    margin: 8px 0 18px;
+    border: 1px solid rgba(0,196,255,.75);
+    border-radius: 18px;
+    background: linear-gradient(135deg,rgba(0,73,150,.28),rgba(0,18,58,.72));
+    box-shadow: 0 0 25px rgba(0,167,255,.12), inset 0 0 25px rgba(0,160,255,.04);
 }
-.step-num {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.68rem;
-    font-weight: 500;
-    letter-spacing: 0.15em;
-    color: #ff8c32;
-    opacity: 0.7;
+
+.pipeline-node {
+    min-width: 210px;
+    padding: 12px 20px;
+    border: 1px solid rgba(0,194,255,.9);
+    border-radius: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: linear-gradient(135deg,rgba(0,104,205,.32),rgba(2,28,75,.72));
+    box-shadow: 0 0 18px rgba(0,174,255,.15), inset 0 0 15px rgba(0,185,255,.05);
+    color: #dff8ff;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
 }
-.step-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 0.95rem;
+
+.pipeline-icon {
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: linear-gradient(145deg,#008cff,#00dfff);
+    box-shadow: 0 0 20px rgba(0,197,255,.45);
+    font-size: 19px;
+}
+
+.pipeline-arrow {
+    color: #42cfff;
+    font-size: 32px;
+    text-shadow: 0 0 12px #00bfff;
+}
+
+/* CARDS */
+.ui-card {
+    border: 1px solid rgba(0,186,255,.68);
+    border-radius: 16px;
+    background: linear-gradient(145deg,rgba(2,38,91,.72),rgba(2,20,55,.82));
+    box-shadow: 0 12px 35px rgba(0,0,0,.25), inset 0 0 25px rgba(0,150,255,.04);
+    padding: 22px;
+}
+
+.section-title {
+    color: #00e0ff;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
     font-weight: 700;
-    color: #f0ebe0;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
 }
-.step-status {
+
+.section-title:before {
+    content: "";
+    display: inline-block;
+    width: 36px;
+    height: 3px;
+    background: #00dfff;
+    margin-right: 12px;
+    vertical-align: middle;
+    box-shadow: 0 0 12px #00cfff;
+}
+
+/* INPUT */
+.stTextInput > div > div > input {
+    background: rgba(0,16,45,.88) !important;
+    color: #eafaff !important;
+    border: 1px solid #008fda !important;
+    border-radius: 11px !important;
+    padding: 14px 16px !important;
+    font-size: 14px !important;
+    box-shadow: inset 0 0 12px rgba(0,151,255,.05);
+}
+
+.stTextInput > div > div > input:focus {
+    border-color: #00dcff !important;
+    box-shadow: 0 0 0 2px rgba(0,215,255,.13), 0 0 20px rgba(0,180,255,.12) !important;
+}
+
+.stTextInput label {
+    display: none !important;
+}
+
+.stButton > button {
+    min-height: 50px;
+    border: 0 !important;
+    border-radius: 11px !important;
+    color: #001126 !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    background: linear-gradient(100deg,#15e5ee,#008cff) !important;
+    box-shadow: 0 8px 28px rgba(0,167,255,.28), 0 0 20px rgba(0,208,255,.12);
+    transition: .2s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 35px rgba(0,174,255,.42);
+}
+
+.try-label {
+    color: #00dfff;
+    font-weight: 700;
+    margin-top: 17px;
+    display: inline-block;
+}
+
+.chip {
+    display: inline-block;
+    margin: 10px 5px 0 8px;
+    padding: 7px 14px;
+    border: 1px solid rgba(0,155,255,.75);
+    border-radius: 20px;
+    color: #70cfff;
+    background: rgba(0,83,160,.16);
+    font-size: 12px;
+}
+
+/* AGENTS */
+.agent-heading {
+    color: #00e0ff;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+}
+
+.agent-heading:before {
+    content: "";
+    display: inline-block;
+    width: 36px;
+    height: 3px;
+    background: #00e0ff;
+    margin-right: 12px;
+    vertical-align: middle;
+    box-shadow: 0 0 12px #00cfff;
+}
+
+.agent-card {
+    display: flex;
+    align-items: center;
+    min-height: 56px;
+    margin-bottom: 9px;
+    padding: 8px 14px;
+    border: 1px solid rgba(0,157,230,.55);
+    border-radius: 15px;
+    background: linear-gradient(90deg,rgba(4,40,89,.82),rgba(2,25,64,.78));
+}
+
+.agent-icon {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 14px;
+    border-radius: 50%;
+    background: linear-gradient(145deg,#008cff,#00dfff);
+    box-shadow: 0 0 17px rgba(0,188,255,.34);
+    font-size: 19px;
+}
+
+.agent-name {
+    color: #eaf7ff;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.agent-description {
+    display: none;
+}
+
+.agent-status {
     margin-left: auto;
-    font-family: 'DM Mono', monospace;
-    font-size: 0.68rem;
-    letter-spacing: 0.1em;
-}
-.status-waiting  { color: #555; }
-.status-running  { color: #ff8c32; }
-.status-done     { color: #50c878; }
-
-/* ── Result panels ── */
-.result-panel {
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 1.8rem 2rem;
-    margin-top: 1rem;
-    margin-bottom: 1.5rem;
-}
-.result-panel-title {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.7rem;
-    font-weight: 500;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: #ff8c32;
-    margin-bottom: 1rem;
-    padding-bottom: 0.7rem;
-    border-bottom: 1px solid rgba(255,140,50,0.15);
-}
-.result-content {
-    font-size: 0.92rem;
-    line-height: 1.8;
-    color: #cdc8bf;
-    white-space: pre-wrap;
-    font-family: 'DM Sans', sans-serif;
+    padding: 7px 15px;
+    border-radius: 18px;
+    color: #66cfff;
+    background: rgba(0,122,205,.18);
+    border: 1px solid rgba(0,154,235,.35);
+    font-size: 10px;
+    letter-spacing: .8px;
+    font-weight: 600;
 }
 
-/* ── Report & feedback panels ── */
-.report-panel {
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(255,140,50,0.2);
-    border-radius: 16px;
-    padding: 2rem 2.5rem;
-    margin-top: 1rem;
-}
-.feedback-panel {
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(80,200,120,0.2);
-    border-radius: 16px;
-    padding: 2rem 2.5rem;
-    margin-top: 1rem;
-}
-.panel-label {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    margin-bottom: 1.2rem;
-    padding-bottom: 0.7rem;
-}
-.panel-label.orange {
-    color: #ff8c32;
-    border-bottom: 1px solid rgba(255,140,50,0.15);
-}
-.panel-label.green {
-    color: #50c878;
-    border-bottom: 1px solid rgba(80,200,120,0.15);
+.agent-running {
+    border-color: #00d9ff;
+    box-shadow: 0 0 22px rgba(0,201,255,.18);
 }
 
-/* ── Progress text ── */
-.stSpinner > div { color: #ff8c32 !important; }
-
-/* ── Expander ── */
-details summary {
-    font-family: 'DM Mono', monospace !important;
-    font-size: 0.75rem !important;
-    color: #a09890 !important;
-    letter-spacing: 0.1em !important;
-    cursor: pointer;
+.status-running {
+    color: #00e8ff;
 }
 
-/* ── Section heading ── */
-.section-heading {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.3rem;
+.agent-done {
+    border-color: rgba(37,236,211,.65);
+}
+
+.status-done {
+    color: #45f0d6;
+}
+
+.agent-waiting {
+    opacity: 1;
+}
+
+.loading-dot {
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%,100% { opacity: .3; }
+    50% { opacity: 1; }
+}
+
+/* PROGRESS */
+.progress-container {
+    margin-top: 10px;
+    padding: 13px 16px;
+    border: 1px solid rgba(0,157,230,.55);
+    border-radius: 13px;
+    background: rgba(1,26,64,.7);
+}
+
+.progress-label {
+    display: flex;
+    justify-content: space-between;
+    color: #00dfff;
+    font-size: 12px;
     font-weight: 700;
-    color: #f0ebe0;
-    margin: 2rem 0 1rem;
+    margin-bottom: 8px;
 }
 
-/* ── Toast-style notice ── */
-.notice {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.72rem;
-    color: #605850;
+.progress-track {
+    height: 7px;
+    border-radius: 10px;
+    background: #0b315e;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    border-radius: 10px;
+    background: linear-gradient(90deg,#00dfff,#008cff);
+    box-shadow: 0 0 12px rgba(0,216,255,.55);
+}
+
+/* RESULTS */
+.results-line {
+    height: 1px;
+    background: linear-gradient(90deg,#00dfff,rgba(0,175,255,.4),transparent);
+    margin: 24px 0 12px;
+}
+
+.results-title {
+    color: #eaf8ff;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+
+.results-title:before {
+    content: "";
+    display: inline-block;
+    width: 36px;
+    height: 3px;
+    background: #00dfff;
+    margin-right: 12px;
+    vertical-align: middle;
+    box-shadow: 0 0 12px #00cfff;
+}
+
+.stExpander {
+    border: 1px solid rgba(0,164,242,.65) !important;
+    border-radius: 13px !important;
+    background: linear-gradient(145deg,rgba(3,39,86,.76),rgba(2,21,53,.85)) !important;
+}
+
+.stExpander details summary {
+    color: #dff8ff !important;
+}
+
+.report-card, .critic-card {
+    border: 1px solid rgba(0,184,255,.65);
+    border-radius: 15px;
+    background: linear-gradient(145deg,rgba(2,39,88,.78),rgba(2,20,54,.88));
+    padding: 22px;
+    margin-top: 10px;
+    box-shadow: 0 12px 35px rgba(0,0,0,.22);
+}
+
+.report-label, .critic-label {
+    color: #00e0ff;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    padding-bottom: 9px;
+    border-bottom: 2px solid rgba(0,218,255,.55);
+    margin-bottom: 17px;
+}
+
+.critic-label {
+    color: #49efd9;
+    border-bottom-color: rgba(73,239,217,.5);
+}
+
+.stDownloadButton > button {
+    width: auto !important;
+    min-width: 240px;
+    margin: 14px auto 0;
+    display: block;
+    border-radius: 10px !important;
+    background: linear-gradient(100deg,#00dfee,#0094ff) !important;
+    color: #001329 !important;
+    font-weight: 700 !important;
+}
+
+.metric-card {
+    padding: 14px;
     text-align: center;
-    margin-top: 3rem;
-    letter-spacing: 0.08em;
+    border: 1px solid rgba(0,160,240,.55);
+    border-radius: 13px;
+    background: rgba(3,30,71,.7);
+}
+
+.metric-value {
+    color: #00dcff;
+    font-size: 23px;
+    font-weight: 700;
+}
+
+.metric-label {
+    color: #719ac1;
+    font-size: 10px;
+    margin-top: 3px;
+}
+
+.running-message {
+    margin-top: 10px;
+    padding: 12px;
+    text-align: center;
+    border-radius: 12px;
+    color: #9edfff;
+    border: 1px solid rgba(0,193,255,.35);
+    background: rgba(0,126,200,.08);
+}
+
+.footer {
+    text-align: center;
+    margin-top: 32px;
+    color: #3489ba;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+
+@media (max-width: 900px) {
+    .visual-pipeline {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .pipeline-node {
+        min-width: 140px;
+    }
+    .pipeline-arrow {
+        display: none;
+    }
+    .block-container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
+# ============================================================
+# STATE
+# ============================================================
 
-# ── Helper: render a step card ────────────────────────────────────────────────
-def step_card(num: str, title: str, state: str, desc: str = ""):
-    status_map = {
-        "waiting": ("WAITING", "status-waiting"),
-        "running": ("● RUNNING", "status-running"),
-        "done":    ("✓ DONE",   "status-done"),
-    }
-    label, cls = status_map.get(state, ("", ""))
-    card_cls = {"running": "active", "done": "done"}.get(state, "")
-    st.markdown(f"""
-    <div class="step-card {card_cls}">
-        <div class="step-header">
-            <span class="step-num">{num}</span>
-            <span class="step-title">{title}</span>
-            <span class="step-status {cls}">{label}</span>
+if "results" not in st.session_state:
+    st.session_state.results = {}
+if "running" not in st.session_state:
+    st.session_state.running = False
+if "done" not in st.session_state:
+    st.session_state.done = False
+if "elapsed" not in st.session_state:
+    st.session_state.elapsed = 0
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def render_agent(icon, name, description, status):
+    if status == "running":
+        card_class = "agent-running"
+        status_html = '<span class="agent-status status-running"><span class="loading-dot">●</span> RUNNING</span>'
+    elif status == "done":
+        card_class = "agent-done"
+        status_html = '<span class="agent-status status-done">✓ DONE</span>'
+    else:
+        card_class = "agent-waiting"
+        status_html = '<span class="agent-status status-waiting">WAITING</span>'
+
+    st.markdown(
+        f"""
+        <div class="agent-card {card_class}">
+            <div class="agent-icon">{icon}</div>
+            <div>
+                <div class="agent-name">{name}</div>
+                <div class="agent-description">{description}</div>
+            </div>
+            {status_html}
         </div>
-        {"<div style='font-size:0.82rem;color:#706860;margin-top:0.3rem;'>"+desc+"</div>" if desc else ""}
+        """,
+        unsafe_allow_html=True,
+    )
+
+def get_step_status(step, results, running):
+    steps = ["search", "reader", "writer", "critic"]
+
+    if step in results:
+        return "done"
+
+    if running:
+        for current_step in steps:
+            if current_step not in results:
+                return "running" if current_step == step else "waiting"
+
+    return "waiting"
+
+def render_pipeline(results, running):
+    render_agent("🔍", "Search Agent", "Finds recent and reliable information", get_step_status("search", results, running))
+    render_agent("📄", "Reader Agent", "Scrapes and analyzes useful sources", get_step_status("reader", results, running))
+    render_agent("✍️", "Writer Chain", "Creates the structured research report", get_step_status("writer", results, running))
+    render_agent("🧠", "Critic Chain", "Reviews quality and gives a score", get_step_status("critic", results, running))
+
+def progress_value(results):
+    return sum(1 for key in ["search", "reader", "writer", "critic"] if key in results)
+
+# ============================================================
+# HERO
+# ============================================================
+
+st.markdown(
+    """
+    <div class="hero">
+        <div class="hero-kicker">MULTI-AGENT AI SYSTEM</div>
+        <h1 class="hero-title">🧠 Research<span>Mind</span></h1>
+        <div class="hero-subtitle">
+            Four specialized AI agents collaborate — searching, scraping, writing,
+            and critiquing — to deliver a polished research report on any topic.
+        </div>
     </div>
-    """, unsafe_allow_html=True)
 
+    <div class="visual-pipeline">
+        <div class="pipeline-node"><div class="pipeline-icon">🔍</div>SEARCH</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node"><div class="pipeline-icon">📄</div>Read</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node"><div class="pipeline-icon">✍️</div>Write</div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node"><div class="pipeline-icon">🧠</div>Review</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-# ── Session state init ────────────────────────────────────────────────────────
-for key in ("results", "running", "done"):
-    if key not in st.session_state:
-        st.session_state[key] = {} if key == "results" else False
+# ============================================================
+# MAIN INPUT + PIPELINE
+# ============================================================
 
+left, right = st.columns([1.25, 1], gap="large")
 
-# ── Hero ──────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="hero">
-    <div class="hero-eyebrow">Multi-Agent AI System</div>
-    <h1>Research<span>Mind</span></h1>
-    <p class="hero-sub">
-        Four specialized AI agents collaborate — searching, scraping, writing,
-        and critiquing — to deliver a polished research report on any topic.
-    </p>
-</div>
-<div class="divider"></div>
-""", unsafe_allow_html=True)
+with left:
+    st.markdown(
+        """
+        <div class="ui-card">
+            <div class="section-title">Research Topic</div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-
-# ── Layout: input left, pipeline right ───────────────────────────────────────
-col_input, col_spacer, col_pipeline = st.columns([5, 0.5, 4])
-
-with col_input:
-    st.markdown('<div class="input-card">', unsafe_allow_html=True)
     topic = st.text_input(
-        "Research Topic",
+        "Research topic",
         placeholder="e.g. Quantum computing breakthroughs in 2025",
         key="topic_input",
-        label_visibility="visible",
+        label_visibility="collapsed",
     )
-    run_btn = st.button("⚡  Run Research Pipeline", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    # Example chips
-    st.markdown("""
-    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem;">
-        <span style="font-family:'DM Mono',monospace;font-size:0.68rem;color:#605850;letter-spacing:0.1em;">TRY →</span>
-    """, unsafe_allow_html=True)
-    examples = ["LLM agents 2025", "CRISPR gene editing", "Fusion energy progress"]
-    for ex in examples:
-        st.markdown(f"""
-        <span style="
-            background:rgba(255,255,255,0.04);
-            border:1px solid rgba(255,255,255,0.08);
-            border-radius:6px;
-            padding:0.25rem 0.7rem;
-            font-size:0.75rem;
-            color:#a09890;
-            font-family:'DM Sans',sans-serif;
-            cursor:default;
-        ">{ex}</span>
-        """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    run_button = st.button(
+        "⚡  Run Research Pipeline",
+        use_container_width=True,
+    )
 
-with col_pipeline:
-    st.markdown('<div class="section-heading">Pipeline</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <span class="try-label">TRY →</span>
+        <span class="chip">LLM agents 2025</span>
+        <span class="chip">CRISPR gene editing</span>
+        <span class="chip">Fusion energy progress</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    r = st.session_state.results
-    done = st.session_state.done
+with right:
+    st.markdown('<div class="ui-card"><div class="agent-heading">Pipeline</div>', unsafe_allow_html=True)
+    render_pipeline(st.session_state.results, st.session_state.running)
 
-    def s(step):
-        if not r:
-            return "waiting"
-        steps = ["search", "reader", "writer", "critic"]
-        idx = steps.index(step)
-        completed = list(r.keys())
-        # figure out which steps are done
-        if step in r:
-            return "done"
-        # which step is running now (first not in r)
-        if st.session_state.running:
-            for i, k in enumerate(steps):
-                if k not in r:
-                    return "running" if k == step else "waiting"
-        return "waiting"
+    completed = progress_value(st.session_state.results)
+    percentage = int((completed / 4) * 100)
 
-    step_card("01", "Search Agent",  s("search"), "Gathers recent web information")
-    step_card("02", "Reader Agent",  s("reader"), "Scrapes & extracts deep content")
-    step_card("03", "Writer Chain",  s("writer"), "Drafts the full research report")
-    step_card("04", "Critic Chain",  s("critic"), "Reviews & scores the report")
+    st.markdown(
+        f"""
+        <div class="progress-container">
+            <div class="progress-label">
+                <span>PIPELINE PROGRESS</span>
+                <span>{percentage}%</span>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" style="width:{percentage}%"></div>
+            </div>
+        </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
-# ── Run pipeline ──────────────────────────────────────────────────────────────
-if run_btn:
+if run_button:
     if not topic.strip():
-        st.warning("Please enter a research topic first.")
+        st.warning("⚠️ Please enter a research topic first.")
     else:
         st.session_state.results = {}
         st.session_state.running = True
         st.session_state.done = False
+        st.session_state.elapsed = 0
         st.rerun()
 
+
+
 if st.session_state.running and not st.session_state.done:
+    start_time = time.time()
+    topic_value = st.session_state.topic_input.strip()
     results = {}
-    topic_val = st.session_state.topic_input
 
-    # ── Step 1: Search ──
-    with st.spinner("🔍  Search Agent is working…"):
+    search_status = st.empty()
+
+    with search_status:
+        st.info("🔍 Search Agent is searching the web...")
+
+    try:
         search_agent = build_search_agent()
-        sr = search_agent.invoke({
-            "messages": [("user", f"Find recent, reliable and detailed information about: {topic_val}")]
+        search_response = search_agent.invoke({
+            "messages": [
+                (
+                    "user",
+                    f"Find recent, reliable and detailed information about: {topic_value}",
+                )
+            ]
         })
-        results["search"] = sr["messages"][-1].content
+        results["search"] = search_response["messages"][-1].content
         st.session_state.results = dict(results)
-    st.rerun() if False else None   # keep inline for now
 
-    # ── Step 2: Reader ──
-    with st.spinner("📄  Reader Agent is scraping top resources…"):
+    except Exception as e:
+        st.session_state.running = False
+        st.error(f"❌ Search Agent failed:\n\n{e}")
+        st.stop()
+
+    with search_status:
+        st.info("📄 Reader Agent is analyzing the best sources...")
+
+    try:
         reader_agent = build_reader_agent()
-        rr = reader_agent.invoke({
-            "messages": [("user",
-                f"Based on the following search results about '{topic_val}', "
-                f"pick the most relevant URL and scrape it for deeper content.\n\n"
-                f"Search Results:\n{results['search'][:800]}"
-            )]
+        reader_response = reader_agent.invoke({
+            "messages": [
+                (
+                    "user",
+                    (
+                        f"Based on the following search results about '{topic_value}', "
+                        "pick the most relevant URL and scrape it for deeper content.\n\n"
+                        f"Search Results:\n{results['search'][:800]}"
+                    ),
+                )
+            ]
         })
-        results["reader"] = rr["messages"][-1].content
+        results["reader"] = reader_response["messages"][-1].content
         st.session_state.results = dict(results)
 
-    # ── Step 3: Writer ──
-    with st.spinner("✍️  Writer is drafting the report…"):
-        research_combined = (
-            f"SEARCH RESULTS:\n{results['search']}\n\n"
-            f"DETAILED SCRAPED CONTENT:\n{results['reader']}"
+    except Exception as e:
+        st.session_state.running = False
+        st.error(f"❌ Reader Agent failed:\n\n{e}")
+        st.stop()
+
+    with search_status:
+        st.info("✍️ Writer Agent is creating your research report...")
+
+    try:
+        combined_research = (
+            "SEARCH RESULTS:\n"
+            f"{results['search']}\n\n"
+            "DETAILED SCRAPED CONTENT:\n"
+            f"{results['reader']}"
         )
+
         results["writer"] = writer_chain.invoke({
-            "topic": topic_val,
-            "research": research_combined
+            "topic": topic_value,
+            "research": combined_research,
         })
+
         st.session_state.results = dict(results)
 
-    # ── Step 4: Critic ──
-    with st.spinner("🧐  Critic is reviewing the report…"):
+    except Exception as e:
+        st.session_state.running = False
+        st.error(f"❌ Writer Agent failed:\n\n{e}")
+        st.stop()
+
+    with search_status:
+        st.info("🧠 Critic Agent is reviewing the report...")
+
+    try:
         results["critic"] = critic_chain.invoke({
             "report": results["writer"]
         })
         st.session_state.results = dict(results)
 
+    except Exception as e:
+        st.session_state.running = False
+        st.error(f"❌ Critic Agent failed:\n\n{e}")
+        st.stop()
+
+    st.session_state.elapsed = time.time() - start_time
     st.session_state.running = False
     st.session_state.done = True
     st.rerun()
 
 
-# ── Results display ───────────────────────────────────────────────────────────
-r = st.session_state.results
 
-if r:
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-heading">Results</div>', unsafe_allow_html=True)
+results = st.session_state.results
 
-    # Raw outputs in expanders
-    if "search" in r:
-        with st.expander("🔍 Search Results (raw)", expanded=False):
-            st.markdown(f'<div class="result-panel"><div class="result-panel-title">Search Agent Output</div>'
-                        f'<div class="result-content">{r["search"]}</div></div>', unsafe_allow_html=True)
+if results:
+    st.markdown('<div class="results-line"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="results-title">RESULTS</div>', unsafe_allow_html=True)
 
-    if "reader" in r:
-        with st.expander("📄 Scraped Content (raw)", expanded=False):
-            st.markdown(f'<div class="result-panel"><div class="result-panel-title">Reader Agent Output</div>'
-                        f'<div class="result-content">{r["reader"]}</div></div>', unsafe_allow_html=True)
+    # Metrics retained from original app
+    metric1, metric2, metric3 = st.columns(3)
 
-    # Final report
-    if "writer" in r:
-        st.markdown("""
-        <div class="report-panel">
-            <div class="panel-label orange">📝 Final Research Report</div>
-        """, unsafe_allow_html=True)
-        st.markdown(r["writer"])   # render markdown natively
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # Download
-        st.download_button(
-            label="⬇  Download Report (.md)",
-            data=r["writer"],
-            file_name=f"research_report_{int(time.time())}.md",
-            mime="text/markdown",
+    with metric1:
+        st.markdown(
+            '<div class="metric-card"><div class="metric-value">4</div><div class="metric-label">AI AGENTS</div></div>',
+            unsafe_allow_html=True,
         )
 
-    # Critic feedback
-    if "critic" in r:
-        st.markdown("""
-        <div class="feedback-panel">
-            <div class="panel-label green">🧐 Critic Feedback</div>
-        """, unsafe_allow_html=True)
-        st.markdown(r["critic"])
-        st.markdown("</div>", unsafe_allow_html=True)
+    with metric2:
+        st.markdown(
+            '<div class="metric-card"><div class="metric-value">100%</div><div class="metric-label">PIPELINE COMPLETE</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    with metric3:
+        st.markdown(
+            f'<div class="metric-card"><div class="metric-value">{st.session_state.elapsed:.1f}s</div><div class="metric-label">RESEARCH TIME</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    result_left, result_middle, result_right = st.columns([1, 1.35, 1], gap="large")
+
+    with result_left:
+        if "search" in results:
+            with st.expander("🔍  Search Results (raw)", expanded=False):
+                st.markdown(results["search"])
+
+        if "reader" in results:
+            with st.expander("📄  Scraped Content (raw)", expanded=False):
+                st.markdown(results["reader"])
+
+    with result_middle:
+        if "writer" in results:
+            st.markdown(
+                """
+                <div class="report-card">
+                    <div class="report-label">📄 Final Research Report</div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown(results["writer"])
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            st.download_button(
+                label="⬇️  Download Report (.md)",
+                data=results["writer"],
+                file_name=f"research_report_{int(time.time())}.md",
+                mime="text/markdown",
+            )
+
+    with result_right:
+        if "critic" in results:
+            st.markdown(
+                """
+                <div class="critic-card">
+                    <div class="critic-label">🧠 Critic Feedback</div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown(results["critic"])
+            st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ── Footer ────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="notice">
-    ResearchMind · Powered by LangChain multi-agent pipeline · Built with Streamlit
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <div class="footer">
+        ─────────────── &nbsp;&nbsp; ResearchMind &nbsp;&nbsp; ───────────────
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+

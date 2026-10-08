@@ -1,0 +1,376 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>ResearchMind AI</title>
+
+    <link rel="stylesheet" href="style.css">
+
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    >
+</head>
+
+<body>
+
+    <div class="background">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="particles"></div>
+
+
+    <nav class="navbar">
+
+        <div class="logo">
+            <div class="logo-icon">
+                <i class="fa-solid fa-brain"></i>
+            </div>
+
+            <span>Research<span class="gradient-text">Mind</span></span>
+        </div>
+
+        <div class="nav-right">
+            <span class="status-dot"></span>
+            AI SYSTEM ONLINE
+        </div>
+
+    </nav>
+
+
+    <main class="container">
+
+>
+        <section class="hero">
+
+            <div class="badge">
+                <span>✦</span>
+                MULTI-AGENT AI RESEARCH
+            </div>
+
+            <h1>
+                Research Smarter.<br>
+                <span class="gradient-text">Discover Faster.</span>
+            </h1>
+
+            <p>
+                Let our AI agents search, analyze, write and critically
+                evaluate your research topic.
+            </p>
+
+        </section>
+
+
+        <section class="search-card">
+
+            <div class="input-label">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                WHAT DO YOU WANT TO RESEARCH?
+            </div>
+
+            <div class="input-wrapper">
+
+                <input
+                    type="text"
+                    id="topicInput"
+                    placeholder="e.g. Future of Generative AI"
+                    autocomplete="off"
+                >
+
+                <button id="researchBtn">
+
+                    <span class="btn-text">
+                        Start Research
+                    </span>
+
+                    <span class="btn-loader">
+                        <i class="fa-solid fa-circle-notch fa-spin"></i>
+                    </span>
+
+                    <i class="fa-solid fa-arrow-right"></i>
+
+                </button>
+
+            </div>
+
+            <div class="examples">
+
+                <span>Try:</span>
+
+                <button class="example">
+                    Generative AI
+                </button>
+
+                <button class="example">
+                    AI in Healthcare
+                </button>
+
+                <button class="example">
+                    Quantum Computing
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- Progress -->
+        <section class="progress-section">
+
+            <div class="progress-header">
+
+                <span id="progressText">
+                    Ready to research
+                </span>
+
+                <span id="progressPercent">
+                    0%
+                </span>
+
+            </div>
+
+            <div class="progress-bar">
+                <div id="progressFill"></div>
+            </div>
+
+        </section>
+
+
+
+        <section class="agents-section">
+
+            <div class="section-title">
+                <span>AI AGENTS</span>
+                <small>LIVE PIPELINE</small>
+            </div>
+
+
+            <div class="agents">
+
+                <div class="agent-card" id="agent-search">
+
+                    <div class="agent-icon">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </div>
+
+                    <div class="agent-info">
+
+                        <h3>Search Agent</h3>
+
+                        <p>
+                            Finds reliable information
+                        </p>
+
+                        <span class="agent-status">
+                            WAITING
+                        </span>
+
+                    </div>
+
+                    <div class="agent-animation"></div>
+
+                </div>
+
+
+                <div class="connector">
+                    <div class="connector-line"></div>
+                    <i class="fa-solid fa-chevron-down"></i>
+                </div>
+
+
+                <!-- Reader -->
+                <div class="agent-card" id="agent-reader">
+
+                    <div class="agent-icon">
+                        <i class="fa-solid fa-book-open"></i>
+                    </div>
+
+                    <div class="agent-info">
+
+                        <h3>Reader Agent</h3>
+
+                        <p>
+                            Reads and analyzes sources
+                        </p>
+
+                        <span class="agent-status">
+                            WAITING
+                        </span>
+
+                    </div>
+
+                    <div class="agent-animation"></div>
+
+                </div>
+
+
+                <div class="connector">
+                    <div class="connector-line"></div>
+                    <i class="fa-solid fa-chevron-down"></i>
+                </div>
+
+
+                <!-- Writer -->
+                <div class="agent-card" id="agent-writer">
+
+                    <div class="agent-icon">
+                        <i class="fa-solid fa-pen-nib"></i>
+                    </div>
+
+                    <div class="agent-info">
+
+                        <h3>Writer Agent</h3>
+
+                        <p>
+                            Creates the research report
+                        </p>
+
+                        <span class="agent-status">
+                            WAITING
+                        </span>
+
+                    </div>
+
+                    <div class="agent-animation"></div>
+
+                </div>
+
+
+                <div class="connector">
+                    <div class="connector-line"></div>
+                    <i class="fa-solid fa-chevron-down"></i>
+                </div>
+
+
+                <!-- Critic -->
+                <div class="agent-card" id="agent-critic">
+
+                    <div class="agent-icon">
+                        <i class="fa-solid fa-brain"></i>
+                    </div>
+
+                    <div class="agent-info">
+
+                        <h3>Critic Agent</h3>
+
+                        <p>
+                            Evaluates report quality
+                        </p>
+
+                        <span class="agent-status">
+                            WAITING
+                        </span>
+
+                    </div>
+
+                    <div class="agent-animation"></div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- Live message -->
+        <div class="live-message" id="liveMessage">
+
+            <div class="pulse"></div>
+
+            <span>System ready</span>
+
+        </div>
+
+
+        <!-- Results -->
+        <section class="results" id="results">
+
+            <div class="result-header">
+
+                <div>
+                    <span class="result-label">
+                        RESEARCH REPORT
+                    </span>
+
+                    <h2>
+                        Your AI Generated Report
+                    </h2>
+                </div>
+
+                <button id="downloadBtn">
+                    <i class="fa-solid fa-download"></i>
+                    Download
+                </button>
+
+            </div>
+
+
+            <div class="report" id="report">
+
+                <div class="empty-report">
+
+                    <i class="fa-solid fa-file-lines"></i>
+
+                    <p>
+                        Your research report will appear here.
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <!-- Critic -->
+            <div class="critic-result">
+
+                <div class="critic-title">
+
+                    <i class="fa-solid fa-star"></i>
+
+                    <div>
+                        <span>AI CRITIC</span>
+                        <h3>Report Evaluation</h3>
+                    </div>
+
+                    <div class="score" id="score">
+                        --
+                    </div>
+
+                </div>
+
+                <div id="feedback">
+                    Waiting for research...
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <footer>
+
+        <p>
+            Built with
+            <span>LangChain</span>
+            +
+            <span>Groq</span>
+            +
+            <span>Tavily</span>
+        </p>
+
+    </footer>
+
+
+    <script src="script.js"></script>
+
+</body>
+</html>
+```

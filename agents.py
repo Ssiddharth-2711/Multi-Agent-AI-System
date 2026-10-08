@@ -1,72 +1,97 @@
 from langchain.agents import create_agent
-from langchain_mistralai import ChatMistralAI
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from tools import web_search , scrape_url
+from tools import web_search, scrape_url
 from dotenv import load_dotenv
+
 load_dotenv()
 
-llm = ChatMistralAI(model = "mistral-small-2603")
+llm = ChatGroq(model="openai/gpt-oss-20b")
 
-#1st agent
+
 def build_search_agent():
     return create_agent(
         model = llm,
         tools= [web_search]
     )
 
-#2nd agent
+
 def build_reader_agent():
     return create_agent(
         model = llm,
         tools = [scrape_url]
     )
 
-#writer chain
 
 writer_prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are an expert research writer. Write clear, structured and insightful reports."),
-    ("human", """Write a detailed research report on the topic below.
+    (
+        "system",
+        "You are a concise research writer. "
+        "Write factual, structured reports without repetition."
+    ),
+    (
+        "human",
+        """Create a research report on:
 
 Topic: {topic}
 
-Research Gathered:
+Research:
 {research}
 
-Structure the report as:
-- Introduction
-- Key Findings (minimum 3 well-explained points)
-- Conclusion
-- Sources (list all URLs found in the research)
+Use exactly this structure:
 
-Be detailed, factual and professional."""),
+## Introduction
+Brief introduction.
+
+## Key Findings
+Give 3 important findings with short explanations.
+
+## Conclusion
+Summarize the findings.
+
+## Sources
+List the available URLs.
+
+Keep the report concise and informative."""
+    ),
 ])
 
 writer_chain = writer_prompt | llm | StrOutputParser()
 
-#critic_chain
 
 critic_prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a sharp and constructive research critic. Be honest and specific."),
-    ("human", """Review the research report below and evaluate it strictly.
+    (
+        "system",
+        "You are a research report reviewer. "
+        "Give simple and useful feedback."
+    ),
+    (
+        "human",
+        """Review this research report:
 
-Report:
 {report}
 
-Respond in this exact format:
+Give:
 
 Score: X/10
 
 Strengths:
-- ...
-- ...
+- 2 points
 
-Areas to Improve:
-- ...
-- ...
+Improvements:
+- 2 points
 
-One line verdict:
-..."""),
+Verdict:
+One short sentence."""
+    ),
 ])
 
 critic_chain = critic_prompt | llm | StrOutputParser()
+
+
+
+
+
+
+
