@@ -1,47 +1,69 @@
-from langchain.agents import create_agent
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from tools import web_search, scrape_url
-from dotenv import load_dotenv
 
 import os
-import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
 
-if "GROQ_API_KEY" in st.secrets:
-    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+# Load the API key from Streamlit Cloud Secrets when available
+try:
+    import streamlit as st
 
+    if "GROQ_API_KEY" in st.secrets:
+        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+except Exception:
+    pass
 
+from langchain.agents import create_agent
 
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from tools import web_search, scrape_url
+
+# Gemini model
+
+llm = ChatGroq(
+    model="openai/gpt-oss-20b",
     temperature=0.2,
+    max_retries=2,
 )
+
+
 
 
 def build_search_agent():
     return create_agent(
-        model = llm,
-        tools= [web_search]
+        model=llm,
+        tools=[web_search],
+        system_prompt=(
+            "You are a web research agent. "
+            "Call web_search once, then summarize its results briefly. "
+            "Do not repeat tool calls."
+        ),
     )
 
 
 def build_reader_agent():
     return create_agent(
-        model = llm,
-        tools = [scrape_url]
+        model=llm,
+        tools=[scrape_url],
+        system_prompt=(
+            "You are a webpage reader. "
+            "Call scrape_url once for the provided URL, "
+            "then summarize the extracted content."
+        ),
     )
+
 
 
 writer_prompt = ChatPromptTemplate.from_messages([
     (
         "system",
-        "You are a concise research writer. "
-        "Write factual, structured reports without repetition."
+        """You are a reliable research writer.
+        Use only information supported by the provided research.
+        Never invent facts, statistics, dates, or URLs.
+        If information is uncertain or sources conflict, state that clearly.
+        Avoid repetition and unsupported claims."""
     ),
     (
         "human",
@@ -55,29 +77,36 @@ Research:
 Use exactly this structure:
 
 ## Introduction
-Brief introduction.
+Introduce the topic and its importance.
 
 ## Key Findings
-Give 3 important findings with short explanations.
+Present 3 important findings with clear explanations.
+Support each finding with the available research.
 
 ## Conclusion
-Summarize the findings.
+Summarize the main findings.
 
 ## Sources
-List the available URLs.
+List only URLs actually provided in the research.
+Do not invent URLs. If none are available, state
+"No source URLs were provided."
 
-Keep the report concise and informative."""
+Keep the report clear, concise, and informative."""
     ),
 ])
 
 writer_chain = writer_prompt | llm | StrOutputParser()
 
 
+
+
 critic_prompt = ChatPromptTemplate.from_messages([
     (
         "system",
-        "You are a research report reviewer. "
-        "Give simple and useful feedback."
+        """You are a strict but constructive research report reviewer.
+        Evaluate factual support, relevance, clarity, structure,
+        source quality, and completeness.
+        Do not assume unsupported claims are true."""
     ),
     (
         "human",
@@ -85,26 +114,19 @@ critic_prompt = ChatPromptTemplate.from_messages([
 
 {report}
 
-Give:
+Return your review using exactly this format:
 
 Score: X/10
 
 Strengths:
-- 2 points
+- Two specific strengths.
 
 Improvements:
-- 2 points
+- Two specific, actionable improvements.
 
 Verdict:
-One short sentence."""
+One sentence explaining the report's overall quality."""
     ),
 ])
 
 critic_chain = critic_prompt | llm | StrOutputParser()
-
-
-
-
-
-
-
