@@ -1,5 +1,6 @@
 from langchain.agents import create_agent
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from tools import web_search, scrape_url
@@ -16,7 +17,10 @@ if "GROQ_API_KEY" in st.secrets:
 
 
 
-llm = ChatGroq(model="openai/gpt-oss-20b")
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    temperature=0.2,
+)
 
 
 def build_search_agent():
