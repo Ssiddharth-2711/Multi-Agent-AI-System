@@ -59,6 +59,7 @@ def web_search(query: str) -> str:
                 url = result.get("url") or ""
                 snippet = result.get("content") or ""
 
+                # Ignore invalid or missing URLs.
                 if not url.startswith(("http://", "https://")):
                     continue
 
@@ -70,9 +71,7 @@ def web_search(query: str) -> str:
                 )
 
             if not output:
-                return (
-                    "No usable search results with valid URLs were found."
-                )
+                return "No usable search results with valid URLs were found."
 
             return (
                 "WEB SEARCH RESULTS\n"
@@ -87,25 +86,12 @@ def web_search(query: str) -> str:
             else:
                 return (
                     "Search failed after 3 attempts. "
-                    f"{type(error).__name__}: {error}"
+                    f"{type(error).__name__}: {error}. "
+                    "Please check your Tavily API key and service availability."
                 )
 
+    return "Search failed after all attempts."
 
-            if not output:
-                return "No search results found for this query."
-
-            return "\n\n---\n\n".join(output)
-
-        except Exception as error:
-            if attempt < 2:
-                time.sleep(2 * (attempt + 1))
-            else:
-                return (
-                    "Search failed after 3 attempts. "
-                    f"Error: {type(error).__name__}: {error}. "
-                    "Please check your internet connection and "
-                    "Tavily API availability."
-                )
 
 
 # --------------------------------------------------
