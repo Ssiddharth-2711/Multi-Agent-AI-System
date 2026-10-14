@@ -1,12 +1,249 @@
 
 import streamlit as st
 import time
+import re
+import requests
+
+from urllib.parse import urlparse
+
+from io import BytesIO
+from urllib.parse import urlparse
+from bs4 import BeautifulSoup
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    PageBreak,
+)
+
+from xml.sax.saxutils import escape, quoteattr
+
 from agents import (
     build_reader_agent,
     build_search_agent,
     writer_chain,
     critic_chain,
 )
+
+# ---------------------------------------------------------
+# Source links and thumbnail helpers
+# ---------------------------------------------------------
+
+def extract_sources(search_text):
+    """Extract unique source URLs from existing search results."""
+
+    sources = []
+    seen_urls = set()
+
+    url_pattern = r'https?://[^\s<>"\']+'
+
+    for match in re.finditer(url_pattern, search_text or ""):
+        url = match.group(0).rstrip(".,);]}")
+
+        if url in seen_urls:
+            continue
+
+        parsed = urlparse(url)
+
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            continue
+
+        seen_urls.add(url)
+
+        # Try to get a title and snippet from nearby search text.
+        line_start = search_text.rfind("\n", 0, match.start()) + 1
+        line_end = search_text.find("\n", match.end())
+
+        if line_end == -1:
+            line_end = len(search_text)
+
+        current_line = search_text[line_start:line_end].strip()
+
+        previous_start = search_text.rfind(
+            "\n", 0, max(0, line_start - 1)
+        ) + 1
+
+        previous_line = search_text[
+            previous_start:line_start
+        ].strip()
+
+        title = parsed.netloc.removeprefix("www.")
+        snippet = ""
+
+        if current_line.lower().startswith("title:"):
+            title = current_line.split(":", 1)[1].strip()
+
+        elif previous_line.lower().startswith("title:"):
+            title = previous_line.split(":", 1)[1].strip()
+
+        if current_line.lower().startswith("snippet:"):
+            snippet = current_line.split(":", 1)[1].strip()
+
+        sources.append({
+            "title": title or parsed.netloc,
+            "url": url,
+            "snippet": snippet,
+        })
+
+    return sources[:6]
+
+
+def get_page_thumbnail(url):
+    """Get a preview image from a webpage without using an LLM."""
+
+    try:
+        parsed = urlparse(url)
+
+        if parsed.scheme not in ("http", "https"):
+            return None
+
+        response = requests.get(
+            url,
+            timeout=5,
+            headers={"User-Agent": "Mozilla/5.0"},
+            stream=True,
+        )
+
+        try:
+            content_type = response.headers.get(
+                "Content-Type", ""
+            ).lower()
+
+            if "text/html" not in content_type:
+                return None
+
+            response.close()
+        finally:
+            response.close()
+
+        # Fetch the page HTML to read its preview metadata.
+        response = requests.get(
+            url,
+            timeout=5,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        for attribute in ("og:image", "twitter:image"):
+            tag = soup.find("meta", property=attribute)
+
+            if not tag:
+                tag = soup.find("meta", attrs={"name": attribute})
+
+            if tag and tag.get("content"):
+                image_url = tag["content"].strip()
+
+                if image_url.startswith("//"):
+                    image_url = "https:" + image_url
+                elif image_url.startswith("/"):
+                    image_url = (
+                        f"{parsed.scheme}://{parsed.netloc}"
+                        + image_url
+                    )
+
+                image_parsed = urlparse(image_url)
+
+                if image_parsed.scheme in ("http", "https"):
+                    return image_url
+
+        return None
+
+    except Exception:
+        return None
+
+
+
+def create_pdf_report(topic, report, sources):
+    """Create a downloadable PDF report with clickable source links."""
+
+    pdf_buffer = BytesIO()
+
+    document = SimpleDocTemplate(
+        pdf_buffer,
+        pagesize=A4,
+        rightMargin=45,
+        leftMargin=45,
+        topMargin=45,
+        bottomMargin=45,
+    )
+
+    styles = getSampleStyleSheet()
+    styles["Title"].textColor = colors.HexColor("#2563eb")
+
+    story = [
+        Paragraph("ResearchMind Research Report", styles["Title"]),
+        Spacer(1, 12),
+        Paragraph(
+            f"<b>Research Topic:</b> {escape(topic)}",
+            styles["BodyText"],
+        ),
+        Spacer(1, 18),
+    ]
+
+    # Add the report content.
+    for line in (report or "").splitlines():
+        stripped = line.strip()
+
+        if not stripped:
+            story.append(Spacer(1, 6))
+        elif stripped.startswith("### "):
+            story.append(
+                Paragraph(escape(stripped[4:]), styles["Heading3"])
+            )
+        elif stripped.startswith("## "):
+            story.append(
+                Paragraph(escape(stripped[3:]), styles["Heading2"])
+            )
+        elif stripped.startswith("# "):
+            story.append(
+                Paragraph(escape(stripped[2:]), styles["Heading1"])
+            )
+        elif stripped.startswith(("- ", "* ")):
+            story.append(
+                Paragraph(
+                    "&#8226; " + escape(stripped[2:]),
+                    styles["BodyText"],
+                )
+            )
+        else:
+            story.append(
+                Paragraph(escape(stripped), styles["BodyText"])
+            )
+
+        story.append(Spacer(1, 5))
+
+    # Add clickable source URLs.
+    if sources:
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("Sources", styles["Heading1"]))
+
+        for source in sources:
+            title = escape(source.get("title", "Source"))
+            url = source.get("url", "")
+
+            if url.startswith(("https://", "http://")):
+                story.append(
+                    Paragraph(
+                        f'{title}<br/><link href="{escape(url)}" '
+                        f'color="blue">{escape(url)}</link>',
+                        styles["BodyText"],
+                    )
+                )
+                story.append(Spacer(1, 8))
+
+    document.build(story)
+
+    pdf_buffer.seek(0)
+    return pdf_buffer.getvalue()
+
+
 
 st.set_page_config(
     page_title="ResearchMind | Multi-Agent AI",
@@ -666,6 +903,8 @@ with right:
         unsafe_allow_html=True,
     )
 
+# RUN RESEARCH PIPELINE
+
 
 if run_button:
     if not topic.strip():
@@ -675,183 +914,328 @@ if run_button:
         st.session_state.running = True
         st.session_state.done = False
         st.session_state.elapsed = 0
+        st.session_state.topic = topic.strip()
         st.rerun()
 
 
+# ============================================================
+# EXECUTE FOUR AGENTS
+# ============================================================
 
-if st.session_state.running and not st.session_state.done:
-    start_time = time.time()
-    topic_value = st.session_state.topic_input.strip()
-    results = {}
+if st.session_state.running:
 
-    search_status = st.empty()
-
-    with search_status:
-        st.info("🔍 Search Agent is searching the web...")
-
-    try:
-        search_agent = build_search_agent()
-        search_response = search_agent.invoke({
-            "messages": [
-                (
-                    "user",
-                    f"Find recent, reliable and detailed information about: {topic_value}",
-                )
-            ]
-        })
-        results["search"] = search_response["messages"][-1].content
-        st.session_state.results = dict(results)
-
-    except Exception as e:
-        st.session_state.running = False
-        st.error(f"❌ Search Agent failed:\n\n{e}")
-        st.stop()
-
-    with search_status:
-        st.info("📄 Reader Agent is analyzing the best sources...")
+    topic_value = st.session_state.get("topic", "").strip()
+    pipeline_start = time.perf_counter()
+    current_stage = "Search Agent"
 
     try:
-        reader_agent = build_reader_agent()
-        reader_response = reader_agent.invoke({
-            "messages": [
-                (
-                    "user",
-                    (
-                        f"Based on the following search results about '{topic_value}', "
-                        "pick the most relevant URL and scrape it for deeper content.\n\n"
-                        f"Search Results:\n{results['search'][:800]}"
-                    ),
-                )
-            ]
-        })
-        results["reader"] = reader_response["messages"][-1].content
-        st.session_state.results = dict(results)
-
-    except Exception as e:
-        st.session_state.running = False
-        st.error(f"❌ Reader Agent failed:\n\n{e}")
-        st.stop()
-
-    with search_status:
-        st.info("✍️ Writer Agent is creating your research report...")
-
-    try:
-        combined_research = (
-            "SEARCH RESULTS:\n"
-            f"{results['search']}\n\n"
-            "DETAILED SCRAPED CONTENT:\n"
-            f"{results['reader']}"
-        )
-
-        results["writer"] = writer_chain.invoke({
-            "topic": topic_value,
-            "research": combined_research,
-        })
-
-        st.session_state.results = dict(results)
-
-    except Exception as e:
-        st.session_state.running = False
-        st.error(f"❌ Writer Agent failed:\n\n{e}")
-        st.stop()
-
-    with search_status:
-        st.info("🧠 Critic Agent is reviewing the report...")
-
-    try:
-        results["critic"] = critic_chain.invoke({
-            "report": results["writer"]
-        })
-        st.session_state.results = dict(results)
-
-    except Exception as e:
-        st.session_state.running = False
-        st.error(f"❌ Critic Agent failed:\n\n{e}")
-        st.stop()
-
-    st.session_state.elapsed = time.time() - start_time
-    st.session_state.running = False
-    st.session_state.done = True
-    st.rerun()
+        with st.status(
+            "🧠 ResearchMind is working...",
+            expanded=True,
+        ) as pipeline_status:
 
 
 
-results = st.session_state.results
+            # ----------------------------------------
+            # SEARCH AGENT
+            # ----------------------------------------
+            search_start = time.time()
 
-if results:
-    st.markdown('<div class="results-line"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="results-title">RESULTS</div>', unsafe_allow_html=True)
+            search_agent = build_search_agent()
 
-    # Metrics retained from original app
-    metric1, metric2, metric3 = st.columns(3)
+            search_response = search_agent.invoke(
+                {
+                    "messages": [
+                        (
+                            "user",
+                            f"""
+Find recent, reliable and useful information about:
 
-    with metric1:
-        st.markdown(
-            '<div class="metric-card"><div class="metric-value">4</div><div class="metric-label">AI AGENTS</div></div>',
-            unsafe_allow_html=True,
-        )
+{topic_value}
 
-    with metric2:
-        st.markdown(
-            '<div class="metric-card"><div class="metric-value">100%</div><div class="metric-label">PIPELINE COMPLETE</div></div>',
-            unsafe_allow_html=True,
-        )
-
-    with metric3:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-value">{st.session_state.elapsed:.1f}s</div><div class="metric-label">RESEARCH TIME</div></div>',
-            unsafe_allow_html=True,
-        )
-
-    result_left, result_middle, result_right = st.columns([1, 1.35, 1], gap="large")
-
-    with result_left:
-        if "search" in results:
-            with st.expander("🔍  Search Results (raw)", expanded=False):
-                st.markdown(results["search"])
-
-        if "reader" in results:
-            with st.expander("📄  Scraped Content (raw)", expanded=False):
-                st.markdown(results["reader"])
-
-    with result_middle:
-        if "writer" in results:
-            st.markdown(
-                """
-                <div class="report-card">
-                    <div class="report-label">📄 Final Research Report</div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.markdown(results["writer"])
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            st.download_button(
-                label="⬇️  Download Report (.md)",
-                data=results["writer"],
-                file_name=f"research_report_{int(time.time())}.md",
-                mime="text/markdown",
+IMPORTANT:
+- Use the web_search tool.
+- Preserve the actual URLs returned by the tool.
+- Do not replace URLs with source names.
+"""
+                        )
+                    ]
+                }
             )
 
-    with result_right:
-        if "critic" in results:
-            st.markdown(
-                """
-                <div class="critic-card">
-                    <div class="critic-label">🧠 Critic Feedback</div>
-                """,
-                unsafe_allow_html=True,
+            # Extract the actual web_search tool output,
+            # which contains the URLs.
+            search_results = "\n\n".join(
+                str(message.content)
+                for message in search_response["messages"]
+                if getattr(message, "type", "") == "tool"
+                and getattr(message, "name", "") == "web_search"
+                and message.content
             )
-            st.markdown(results["critic"])
-            st.markdown("</div>", unsafe_allow_html=True)
 
+            # Fallback if no tool output was captured.
+            if not search_results:
+                search_results = search_response["messages"][-1].content
+
+            st.session_state.results["search"] = search_results
+
+            print(
+                "[PERFORMANCE] Search Agent: "
+                f"{time.perf_counter() - search_start:.2f} seconds"
+            )
+
+            # ------------------------------------------------
+            # 2. READER AGENT
+            # ------------------------------------------------
+
+            current_stage = "Reader Agent"
+            st.write("📖 Reader Agent is analyzing a source...")
+
+            reader_start = time.perf_counter()
+
+            reader_agent = build_reader_agent()
+
+            reader_response = reader_agent.invoke(
+                {
+                    "messages": [
+                        (
+                            "user",
+                            f"""
+Based on these search results about "{topic_value}",
+choose the most relevant URL and extract useful information.
+
+Search Results:
+
+{search_results[:3000]}
+"""
+                        )
+                    ]
+                }
+            )
+
+            reader_content = reader_response["messages"][-1].content
+
+            st.session_state.results["reader"] = reader_content
+
+            print(
+                "[PERFORMANCE] Reader Agent: "
+                f"{time.perf_counter() - reader_start:.2f} seconds"
+            )
+
+
+
+            # ------------------------------------------------
+            # 3. WRITER CHAIN
+            # ------------------------------------------------
+
+            current_stage = "Writer Chain"
+            st.write("✍️ Writer is preparing the report...")
+
+            writer_start = time.perf_counter()
+
+            research_combined = f"""
+ORIGINAL SEARCH RESULTS
+Preserve the actual URLs exactly as provided.
+
+{search_results}
+
+DETAILED READER CONTENT
+
+{reader_content}
+"""
+
+            report = writer_chain.invoke(
+                {
+                    "topic": topic_value,
+                    "research": research_combined,
+                }
+            )
+
+            st.session_state.results["writer"] = report
+
+            print(
+                "[PERFORMANCE] Writer Chain: "
+                f"{time.perf_counter() - writer_start:.2f} seconds"
+            )
+
+                        
+
+            # ------------------------------------------------
+            # 4. CRITIC CHAIN
+            # ------------------------------------------------
+
+            current_stage = "Critic Chain"
+            st.write("🧐 Critic is reviewing the report...")
+
+            critic_start = time.perf_counter()
+
+            feedback = critic_chain.invoke(
+                {
+                    "report": report,
+                }
+            )
+
+            st.session_state.results["critic"] = feedback
+
+            print(
+                "[PERFORMANCE] Critic Chain: "
+                f"{time.perf_counter() - critic_start:.2f} seconds"
+            )
+
+            # ------------------------------------------------
+            # COMPLETE
+            # ------------------------------------------------
+
+            total_elapsed = time.perf_counter() - pipeline_start
+
+            st.session_state.elapsed = total_elapsed
+            st.session_state.running = False
+            st.session_state.done = True
+
+            pipeline_status.update(
+                label="✅ Research completed successfully!",
+                state="complete",
+                expanded=False,
+            )
+
+            print(
+                "[PERFORMANCE] Total pipeline: "
+                f"{total_elapsed:.2f} seconds"
+            )
+
+    except Exception as error:
+        st.session_state.running = False
+        st.session_state.done = False
+
+        error_message = (
+            f"❌ {current_stage} failed.\n\n"
+            f"{type(error).__name__}: {error}"
+        )
+
+        print(f"\n[ERROR] {error_message}")
+        st.error(error_message)
+
+    else:
+        # Refresh only after successful completion.
+        st.rerun()
+
+
+# ============================================================
+# DISPLAY RESULTS
+# ============================================================
+
+if st.session_state.done and st.session_state.results:
+    results = st.session_state.results
+
+    sources = extract_sources(results.get("search", ""))
+
+
+    # -----------------------------------------------------
+    # SOURCE CARDS
+    # -----------------------------------------------------
+    st.markdown("### 🔗 Research Sources")
+
+    if sources:
+        for start in range(0, len(sources), 2):
+            columns = st.columns(2)
+
+            for column, source in zip(
+                columns, sources[start:start + 2]
+            ):
+                with column:
+                    with st.container(border=True):
+                        st.markdown(f"**{source['title']}**")
+
+                        thumbnail = get_page_thumbnail(source["url"])
+
+                        if thumbnail:
+                            try:
+                                st.image(
+                                    thumbnail,
+                                    use_container_width=True,
+                                )
+                            except Exception:
+                                st.caption("Preview image unavailable.")
+                        else:
+                            st.caption("No preview image available.")
+
+                        if source.get("snippet"):
+                            st.write(source["snippet"])
+                        else:
+                            st.caption(source["url"])
+
+                        st.markdown(
+                            f"[🔗 Open source]({source['url']})"
+                        )
+    else:
+        st.info(
+            "No source URLs were detected in the search results. "
+            "You can still view the existing research below."
+        )
+
+    # -----------------------------------------------------
+    # EXISTING SEARCH AND READER RESULTS
+    # -----------------------------------------------------
+    st.markdown("### 🔍 Search Results")
+    with st.expander("View search information"):
+        st.write(results.get("search", ""))
+
+    st.markdown("### 📄 Source Analysis")
+    with st.expander("View reader analysis"):
+        st.write(results.get("reader", ""))
+
+    # -----------------------------------------------------
+    # FINAL REPORT AND DOWNLOADS
+    # -----------------------------------------------------
+    st.markdown("### ✍️ Final Research Report")
+
+    report = results.get("writer", "")
+    st.markdown(report)
+
+    st.download_button(
+        label="⬇️ Download Research Report (.txt)",
+        data=report,
+        file_name="research_report.txt",
+        mime="text/plain",
+        use_container_width=True,
+    )
+
+    pdf_data = create_pdf_report(
+        st.session_state.get("topic", ""),
+        report,
+        sources,
+    )
+
+    st.download_button(
+        label="📄 Download Research Report (.pdf)",
+        data=pdf_data,
+        file_name="research_report.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
+
+
+# -----------------------------------------------------
+# CRITIC REVIEW
+# -----------------------------------------------------
+
+critic_feedback = st.session_state.results.get("critic", "")
+
+critic_feedback = "\n".join(
+    line
+    for line in critic_feedback.splitlines()
+    if not line.strip().startswith("Score:")
+)
+
+st.markdown("### 🧠 Critic Review")
+st.markdown(critic_feedback)
 
 st.markdown(
-    """
-    <div class="footer">
-        ─────────────── &nbsp;&nbsp; ResearchMind &nbsp;&nbsp; ───────────────
-    </div>
-    """,
+    '<div class="footer">'
+    'ResearchMind • Multi-Agent AI Research System'
+    '</div>',
     unsafe_allow_html=True,
 )
+
+
 
